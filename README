@@ -1,0 +1,32 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=4528
+
+Sometimes you want a bit of Vim code to be processed for a single file:
+e.g. special mappings or a few convenient functions. You can't
+put that into a filetype plugin, because it's for one file only, and perhaps
+it doesn't even have a filetype to begin with. You can write a Vim script for
+that file, but you have to remember to source it, and it creates unnecessary
+files.
+
+For instance, for a single file, you want to remap "S" to some function:
+
+        function! MyFunc ()
+           ...
+        endfunction
+        nnoremap <buffer> S :call MyFunc()<CR>
+
+Modepars are meant to solve that issue: like modelines, they are bits of Vim
+code contained directly in the file loaded in Vim, but unlike modelines, any
+Vim code can be processed, not just options. Thus, the above example may appear
+as follows at the beginning or end of a TeX file:
+
+        % function! MyFunc ()
+        %   ...
+        % endfunction
+        % nnoremap <buffer> S :call MyFunc()<CR>
+
+The comments make the code harmless to the TeX file, while the first and last
+lines signal that it should be sourced by Vim like a script.
+
+Modepars are executed automatically when a file is loaded into a buffer, just
+like modelines; they can also be (re)loaded by hand. All modepars are
+protected by ids, and only authorized modepars are automatically executed.

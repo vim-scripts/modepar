@@ -1,0 +1,172 @@
+*modepar.txt* 		Extended modelines		April 17, 2013
+
+Author: Paul Isambert (zappathustra AT free DOT fr)
+
+==============================================================================
+1. Introduction
+
+Sometimes you want a bit of Vim code to be processed for a single file:
+special mappings for that file only, or a few convenient functions. You can't
+put that into a filetype plugin, because it's for one file only, and perhaps
+it doesn't even have a filetype to begin with. You can write a Vim script for
+that file, but you have to remember to source it, and it creates unnecessary
+files.
+
+For instance, I sometimes write files with TODO lists containing URL's, and a
+simple mapping to open them in the browser would be handy; or I'm writing a
+TeX file with a lot of R snippets that I would like to evaluate at once, for
+which the following code is useful: >
+	function! s:R(code)
+	   exe "!R --silent -e " . shellescape('source("data.r"); ' . a:code)
+	endfunction
+	nnoremap <buffer> X "zyi":call <SID>R(@z)<CR>
+This pastes into register "z" the material enclosed in double-quotes surrounding
+the cursor, and sends it to R, with some data to be sourced first. So I can
+evaluate the R code in, e.g.: >
+	... and \verb"t.test(data1, data2)" shows that ...
+<
+Modepars are meant to solve that issue: like modelines, they are bits of Vim
+code contained directly in the file loaded in Vim, but unlike modelines, any
+Vim code can be processed, not just options. Thus, the above example appears
+as follows at the end of my TeX file: >
+	% modepar:
+	%
+	% function! s:R(code)
+	%    exe "!R --silent -e " . shellescape('source("data.r"); ' . a:code)
+	% endfunction
+	% nnoremap <buffer> X "zyi":call <SID>R(@z)<CR>
+	%
+	% endmodepar
+The comments make the code harmless to the TeX file, while the first and last
+lines signal that it should be sourced by Vim like a script.
+
+Modepars are executed automatically when a file is loaded into a buffer, just
+like modelines; they can also be (re)loaded by hand. All modepars are
+protected by ids, and only authorized modepars are automatically executed.
+
+==============================================================================
+2. Syntax						*modepar-syntax*
+
+To put it simply, a modepar is designed as follows:
+
+	1. It begins with a line containing "modepar:", immediately preceded
+	   by a space or the beginning of the line; this is generally followed
+	   by a |modepar-id|.
+	2. It ends with a line containing "endmodepar", also immediately
+	   preceded by a space or the beginning of the line.
+	3. It is at the very beginning or end of a file, ignoring blank lines
+	   and modelines, so a modepar doesn't get in the way of modelines and
+	   both can be used in the same file (modepars are processed first).
+
+The material enclosed between the opening and closing lines is the script to be
+processed; each line can begin with whatever begins the "endmodepar" line, and
+that material will be removed, so the entire script can be given in comments.
+For instance, the following is suitable to remap "V" to "v" in a TeX file: >
+	% modepar: myid
+	% nnoremap <buffer> V v
+	% endmodepar
+The same in Lua could be either >
+	-- modepar: myid
+	-- nnoremap <buffer> V v
+	-- endmodepar
+or >
+	--[[ modepar: myid
+	     nnoremap <buffer> V v
+	     endmodepar --]]
+The script is executed as any other script; in particular options are NOT set
+locally by default (unlike in modelines), so ":setlocal" should be used
+when necessary. Do not expect much from <sfile>, since a temporary file is
+used; in particular, something like "expand('<sfile>:p')" will return an
+uninteresting path. However, "%" can be used to refer to the current buffer
+where the modepar is executed.
+							*modepar-version*
+Like modelines, modepars can take a version number, in which case the modepar
+is executed if and only if Vim has the right version, as follows:
+	modepar{vers}:	version {vers} or later
+	modepar<{vers}:	version before {vers}
+	modepar={vers}:	version {vers}
+	modepar>{vers}:	version after {vers}
+						*modepar-id* *g:modepar_ids*
+Finally, any sequence of non-space and non-colon (see |one-line-modepar|)
+characters after the colon in the opening line is a (not necessarily unique)
+id; only those modepars whose ids are allowed are processed, so you are
+protected from malicious modepars in files sent to you (unless you enemy knows
+your secret id).
+							
+Allowed ids are stored in the "g:modepar_ids" list; thus, to allow the
+modepars in the examples above, your .vimrc file should at least contain: >
+	let g:modepar_ids = ["myid"]
+If "g:modepar_ids" doesn't exist or is empty, then no modepar is ever
+executed, except by hand (see |:Domodepar|). Modepars without an id have
+really an empty id, and are allowed if the list contains an empty string.
+
+							*one-line-modepar*
+If a modepar script is very simple and holds in a single line, the
+"modepar/endmodepar" syntax is a bit heavy; that's why modepars can use an
+alternate syntax: if a colon follows the |modepar-id|, then the rest of the
+line up to the end or to a pair of colons (possibly separated by space) is
+considered as the content of the script. Thus, the following are identical
+modepars: a normal modepar in TeX: >
+	% modepar: myid
+	% nnoremap <buffer> V v
+	% endmodepar
+a one-line modepar in Lua, up to the end of the line: >
+	-- modepar: myid : nnoremap <buffer> V v
+and a one-line modepar in HTML, up to the two colons: >
+	<!-- modepar: myid : nnoremap <buffer> V v :: -->
+<							
+							*multiple-modepar*
+Once a modepar has been found, the search for a new one starts again as if at
+the beginning (or end) of the file; in other words, several modepars can be
+processed, as long as they are separated by nothing but blank lines and/or
+modelines. Each modepar is executed independently of the other, in a file of
+its own, so script-local variables, for instance, are defined for the current
+modepar only.
+
+==============================================================================
+3. Enabling modepars
+
+:Modepar[!]						*:Modepar*
+	Turn on the automatic execution of modepars; with [!], automatic
+	execution is turned off. This doesn't prevent executing modepars by
+	hand with |:Domodepar|.
+	Note that modepars must still have the right id to be executed, see
+	|modepar-id|.
+						*g:modepar_enable* *g:modepar_loaded*
+By default, modepars are turned on when the plugin is loaded; however, if
+"g:modepar_enable" exists (set in the .vimrc file), then modepars are enabled
+only if that variable is non-zero (so setting it to non-zero is the same thing
+as not setting it at all); otherwise, modepars should be turned on with |:Modepar|.
+							
+As is usual in Vim, you can also prevent the loading of the modepar script by
+setting the "g:modepar_loaded" variable to anything; modepars thus won't be
+executed, but |:Modepar| will be undefined too.
+
+==============================================================================
+4. Executing modepars by hand
+
+Modepars can be executed by hand, which is useful to execute unallowed
+modepars or to reexecute a modified one.
+
+:Domodepar[!]						*:Domodepar*
+	Execute the modepar in the current buffer, if any. Note that ids
+	aren't checked in this case, so don't do that on modepars you don't
+	trust. With [!], no warning is issued if there is no modepar.
+
+If you want to always execute all modepars no matter their ids, you can set
+this in your .vimrc file: >
+	let g:modepar_enable = 0
+	au BufReadPost * Domodepar!
+The first line disables automatic modepars; the second one executes |:Domodepar|
+each time a file is loaded; it does so silently to avoid the "No modepar"
+message. That is not a very safe, of course.
+
+And, to close this documentation, here is a modepar that will be executed when
+loading this file, if "SomeId" is authorized: it simply maps "S" to produce
+the line separating sections. Notice that the modeline below doesn't get in
+the way (try |:Domodepar| and it'll work). >
+	modepar: SomeId
+	nnoremap <buffer> S o<Esc>78i=<Esc>o
+	endmodepar
+   
+ vim:tw=78:ts=8:ft=help:norl:noexpandtab:
